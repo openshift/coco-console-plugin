@@ -15,6 +15,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { KataConfigModel } from '../k8s/resources';
 import { buildKataConfig } from '../utils/kataConfig';
+import { PermissionHint } from '../utils/rbac/PermissionHint';
+import { useCanCreateKataConfig } from '../utils/rbac/useCocoPermissions';
 import './coco.css';
 
 /**
@@ -23,6 +25,7 @@ import './coco.css';
  */
 export const EnableKataConfig: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
+  const [canCreate, canCreateLoading] = useCanCreateKataConfig();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -42,11 +45,13 @@ export const EnableKataConfig: FC = () => {
 
   return (
     <>
+      <PermissionHint allowed={canCreate} loading={canCreateLoading} />
       <Button
         variant="secondary"
         onClick={() => {
           setOpen(true);
         }}
+        isDisabled={canCreateLoading || !canCreate}
       >
         {t('Create KataConfig')}
       </Button>
@@ -96,7 +101,7 @@ export const EnableKataConfig: FC = () => {
               variant="primary"
               onClick={() => void onCreate()}
               isLoading={busy}
-              isDisabled={busy}
+              isDisabled={busy || canCreateLoading || !canCreate}
             >
               {t('Create and reboot')}
             </Button>

@@ -31,6 +31,8 @@ import {
 } from '../k8s/resources';
 import type { TeeNode } from '../k8s/types';
 import { buildOscFeatureGatesConfigMap } from '../utils/featureGates';
+import { PermissionHint } from '../utils/rbac/PermissionHint';
+import { useCanWriteFeatureGates } from '../utils/rbac/useCocoPermissions';
 import { SNP_LABEL, TDX_LABEL, teeLabel } from '../utils/tee';
 import './coco.css';
 
@@ -96,7 +98,7 @@ export const EnableConfidentialContainers: FC = () => {
   // enable button (isDisabled={!loaded}) permanently greyed out. A namespaced
   // list loads correctly (empty array when the CM is absent), the same pattern
   // EnableTdxHost uses for MachineConfigs.
-  const [cms, loaded] = useK8sWatchResource<ConfigMapKind[]>({
+  const [cms, loaded, loadError] = useK8sWatchResource<ConfigMapKind[]>({
     groupVersionKind: ConfigMapGVK,
     namespace: OSC_NAMESPACE,
     isList: true,
@@ -104,6 +106,10 @@ export const EnableConfidentialContainers: FC = () => {
   const cm = loaded ? cms?.find((c) => c.metadata?.name === OSC_FEATURE_GATES_CM) : undefined;
   const enabled = !!cm && cm.data?.confidential === 'true';
   const cmExists = !!cm;
+  const lookupReady = loaded && !loadError;
+
+  // Check write permissions: create if absent, patch if present
+  const [canWrite, canWriteLoading] = useCanWriteFeatureGates(cmExists);
 
   const { teeNodes, loaded: nodesLoaded } = useTeeNodes();
   const [kataConfig] = useKataConfig();
@@ -113,8 +119,7 @@ export const EnableConfidentialContainers: FC = () => {
   // bare-metal TEE nodes. This holds regardless of DISABLECVM (non-CVM peer pods
   // still run kata-remote, no reboot). Matches Overview's onNodeTee / the
   // COCO_ONNODE_TEE flag in flags.ts.
-  const cloudPeerPodsOnly =
-    kataConfig?.spec?.enablePeerPods === true && teeNodes.length === 0;
+  const cloudPeerPodsOnly = kataConfig?.spec?.enablePeerPods === true && teeNodes.length === 0;
 
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -143,18 +148,35 @@ export const EnableConfidentialContainers: FC = () => {
   };
 
   const onEnable = async () => {
+    if (busy || !lookupReady || canWriteLoading || !canWrite || enabled) {
+      return;
+    }
+
     setBusy(true);
     setError(undefined);
     try {
       if (cmExists) {
+        // Patch existing ConfigMap: add or update the 'confidential' key at /data/confidential
+        const patches: { op: string; path: string; value?: string | Record<string, string> }[] = [];
+        if (cm?.data) {
+          // ConfigMap has data: JSON Patch add at /data/confidential
+          patches.push({ op: 'add', path: '/data/confidential', value: 'true' });
+        } else {
+          // ConfigMap has no data object: JSON Patch add at /data
+          patches.push({
+            op: 'add',
+            path: '/data',
+            value: { confidential: 'true' },
+          });
+        }
+
         await k8sPatch({
           model: ConfigMapModel,
           resource: cm,
-          data: [
-            { op: 'add', path: '/data', value: { ...(cm?.data ?? {}), confidential: 'true' } },
-          ],
+          data: patches,
         });
       } else {
+        // Create new ConfigMap
         await k8sCreate({ model: ConfigMapModel, data: buildOscFeatureGatesConfigMap() });
       }
       setOpen(false);
@@ -176,171 +198,103 @@ export const EnableConfidentialContainers: FC = () => {
   return (
     <>
       <Button
-        variant="secondary"
+        variant="primary"
         onClick={() => {
           setOpen(true);
         }}
-        isDisabled={!loaded}
+        isDisabled={!lookupReady || cloudPeerPodsOnly}
       >
         {t('Enable confidential containers')}
       </Button>
-      {open && (
-        <Modal
-          isOpen
-          variant="medium"
-          onClose={() => {
-            setOpen(false);
-          }}
-        >
-          <ModalHeader title={t('Enable confidential containers')} />
-          <ModalBody>
-            <p className="coco-openshift-console-plugin__mb">
-              {cloudPeerPodsOnly
-                ? t(
-                    'This enables confidential containers in the OpenShift sandboxed containers operator — a supported configuration option. On this cluster peer pods run in the cloud, so the confidential runtime is kata-remote and your peer-pod VMs become Confidential VMs. Nothing is installed on your worker nodes.',
-                  )
-                : t(
-                    'This enables confidential containers in the OpenShift sandboxed containers operator — a supported configuration option. The operator then installs the kata-cc runtime on your TEE nodes.',
-                  )}
-            </p>
-            {cloudPeerPodsOnly ? (
-              <Alert
-                variant="info"
-                isInline
-                title={t('No node reboot')}
-                className="coco-openshift-console-plugin__mb"
-              >
-                {t(
-                  'The kata-remote runtime is already installed and does not reboot your nodes. To make peer pods confidential, set DISABLECVM to "false" and a confidential instance type (Standard_DC*as_v5 for AMD SEV-SNP or Standard_EC*eds_v5 for Intel TDX) in the peer pods config map.',
-                )}
-              </Alert>
-            ) : (
-              <Alert
-                variant="warning"
-                isInline
-                title={t('Nodes will reboot')}
-                className="coco-openshift-console-plugin__mb"
-              >
-                {t(
-                  'Installing the kata-cc runtime reconfigures and reboots the sandboxed-containers nodes, one at a time.',
-                )}
-              </Alert>
-            )}
-
-            <p className="coco-openshift-console-plugin__mb">
-              {t(
-                'Confidential containers is enabled cluster-wide. Pick the TEE-capable nodes you intend to run confidential workloads on — placement is per-workload, via the runtime class and a node selector. The snippet below updates as you choose.',
-              )}
-            </p>
-            {!nodesLoaded ? (
-              <p className="coco-openshift-console-plugin__muted">{t('Loading nodes…')}</p>
-            ) : teeNodes.length === 0 ? (
-              <Alert
-                variant="info"
-                isInline
-                title={t('No TEE-capable nodes detected yet')}
-                className="coco-openshift-console-plugin__mb"
-              >
-                {t(
-                  'Enable TEE detection and the Intel TDX host first. The snippet below targets any TDX node by label.',
-                )}
-              </Alert>
-            ) : (
-              <div
-                className="coco-openshift-console-plugin__mb"
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                  maxHeight: '180px',
-                  overflowY: 'auto',
-                }}
-              >
-                {teeNodes.map((n) => (
-                  <Checkbox
-                    key={n.name}
-                    id={`coco-node-${n.name}`}
-                    isChecked={sel.has(n.name)}
-                    onChange={() => {
-                      toggleNode(n.name);
-                    }}
-                    label={
-                      <>
-                        <span className="coco-openshift-console-plugin__mono">{n.name}</span>{' '}
-                        <Label color="blue" isCompact>
-                          {teeLabel(n.tee)}
-                        </Label>{' '}
-                        {n.gpuCcReady && (
-                          <Label color="purple" isCompact>
-                            {t('Confidential GPU')}
-                          </Label>
-                        )}{' '}
-                        {!n.ready && (
-                          <Label color="orange" isCompact>
-                            {t('Not ready')}
-                          </Label>
-                        )}
-                      </>
-                    }
-                  />
-                ))}
-              </div>
-            )}
-
-            <CodeBlock
-              className="coco-openshift-console-plugin__mb"
-              actions={
-                <CodeBlockAction>
-                  <Button variant="link" isInline onClick={copySnippet}>
-                    {copied ? t('Copied') : t('Copy')}
-                  </Button>
-                </CodeBlockAction>
-              }
-            >
-              <CodeBlockCode>{snippet}</CodeBlockCode>
-            </CodeBlock>
-
-            <ExpandableSection
-              toggleText={t('ConfigMap to apply')}
-              className="coco-openshift-console-plugin__mt"
-            >
-              <CodeBlock>
-                <CodeBlockCode>
-                  {JSON.stringify(buildOscFeatureGatesConfigMap(), null, 2)}
-                </CodeBlockCode>
-              </CodeBlock>
-            </ExpandableSection>
-            {error && (
-              <Alert
-                variant="danger"
-                isInline
-                title={t('Could not enable confidential containers')}
-                className="coco-openshift-console-plugin__mt"
-              >
-                {error}
-              </Alert>
-            )}
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant="primary"
-              onClick={() => void onEnable()}
-              isLoading={busy}
-              isDisabled={busy || !loaded}
-            >
-              {t('Enable and reboot')}
-            </Button>
-            <Button
-              variant="link"
-              onClick={() => {
-                setOpen(false);
-              }}
-            >
-              {t('Cancel')}
-            </Button>
-          </ModalFooter>
-        </Modal>
+      {loadError && (
+        <Alert variant="danger" isInline title={t('Unable to read feature-gate ConfigMaps')}>
+          {t('Configuration changes are disabled until the resource read succeeds.')}
+        </Alert>
       )}
+      <Modal
+        isOpen={open}
+        onClose={() => {
+          setOpen(false);
+        }}
+        title={t('Enable confidential containers')}
+        variant="large"
+      >
+        <ModalHeader />
+        <ModalBody>
+          {error && (
+            <Alert
+              variant="danger"
+              isInline
+              title={t('Error')}
+              className="coco-openshift-console-plugin__mb"
+            >
+              {error}
+            </Alert>
+          )}
+          {!loadError && <PermissionHint allowed={canWrite} loading={canWriteLoading || !loaded} />}
+
+          {!cloudPeerPodsOnly && teeNodes.length > 0 && (
+            <>
+              <ExpandableSection
+                toggleText={t('Scheduling confidential workloads (optional)')}
+                className="coco-openshift-console-plugin__mb"
+              >
+                <p>
+                  {t(
+                    'Once confidential containers is enabled, select the bare-metal TEE nodes where confidential workloads can run. Copy the pod spec fragment below into your manifest.',
+                  )}
+                </p>
+                {nodesLoaded ? (
+                  <>
+                    {teeNodes.map((n) => (
+                      <Checkbox
+                        key={n.name}
+                        id={`coco-node-${n.name}`}
+                        label={`${n.name} (${teeLabel(n.tee)})`}
+                        isChecked={sel.has(n.name)}
+                        onChange={(e) => {
+                          if (
+                            e.target instanceof HTMLInputElement &&
+                            e.target.checked !== undefined
+                          ) {
+                            toggleNode(n.name);
+                          }
+                        }}
+                      />
+                    ))}
+
+                    <CodeBlock actions={[<CodeBlockAction onClick={copySnippet} key="copy" />]}>
+                      <CodeBlockCode>{snippet}</CodeBlockCode>
+                    </CodeBlock>
+                    {copied && <Alert variant="success" title={t('Copied to clipboard')} />}
+                  </>
+                ) : (
+                  <p>{t('Loading TEE nodes...')}</p>
+                )}
+              </ExpandableSection>
+            </>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            onClick={() => {
+              setOpen(false);
+            }}
+          >
+            {t('Cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              void onEnable();
+            }}
+            isLoading={busy}
+            isDisabled={busy || !lookupReady || canWriteLoading || !canWrite}
+          >
+            {t('Enable')}
+          </Button>
+        </ModalFooter>
+      </Modal>
     </>
   );
 };

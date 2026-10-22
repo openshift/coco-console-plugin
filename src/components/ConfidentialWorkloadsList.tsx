@@ -7,6 +7,7 @@ import {
   useK8sWatchResource,
 } from '@openshift-console/dynamic-plugin-sdk';
 import {
+  Alert,
   Button,
   Dropdown,
   DropdownItem,
@@ -39,6 +40,8 @@ import { useTranslation } from 'react-i18next';
 import { useConfidentialWorkloads } from '../k8s/hooks';
 import { ConfigMapGVK, DeploymentModel, NamespaceGVK, PodModel } from '../k8s/resources';
 import type { CcWorkload, ConfigMapKind } from '../k8s/types';
+import { PermissionHint } from '../utils/rbac/PermissionHint';
+import { useCanDeleteWorkload } from '../utils/rbac/useCocoPermissions';
 import { statusCategory, statusColor } from '../utils/status';
 import { EVIDENCE_LABEL, parseEvidence, type EvidenceRecord } from '../utils/evidence';
 import { CcClassLabel } from './CcClassLabel';
@@ -89,12 +92,102 @@ const RowActions: FC<{
         <DropdownItem
           onClick={() => {
             onDelete(w);
+            setOpen(false);
           }}
         >
           {t('Delete')}
         </DropdownItem>
       </DropdownList>
     </Dropdown>
+  );
+};
+
+const DeleteWorkloadConfirmation: FC<{
+  workload: CcWorkload;
+  onClose: () => void;
+}> = ({ workload, onClose }) => {
+  const { t } = useTranslation('plugin__coco-openshift-console-plugin');
+
+  const [canDelete, canDeleteLoading] = useCanDeleteWorkload(
+    workload.kind,
+    workload.namespace,
+    workload.name,
+  );
+
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string>();
+
+  const doDelete = async () => {
+    if (deleting || canDeleteLoading || !canDelete) return;
+
+    setDeleting(true);
+    setDeleteError(undefined);
+
+    try {
+      await k8sDelete({
+        model: workload.kind === 'Pod' ? PodModel : DeploymentModel,
+        resource: workload.obj,
+      });
+
+      onClose();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <Modal
+      isOpen
+      variant="small"
+      onClose={() => {
+        if (!deleting) onClose();
+      }}
+    >
+      <ModalHeader title={t('Delete confidential workload?')} />
+
+      <ModalBody>
+        <p>
+          {t('Delete {{kind}} {{name}} in {{namespace}}? Its confidential VM will be torn down.', {
+            kind: workload.kind,
+            name: workload.name,
+            namespace: workload.namespace,
+          })}
+        </p>
+
+        {workload.kind === 'Pod' && (
+          <Alert variant="info" isInline title={t('Controller-managed Pods may be recreated')}>
+            {t(
+              'Deleting a Pod managed by a Deployment or another controller may cause a replacement Pod to be created.',
+            )}
+          </Alert>
+        )}
+
+        <PermissionHint allowed={canDelete} loading={canDeleteLoading} />
+
+        {deleteError && (
+          <Alert variant="danger" isInline title={t('Deletion failed')}>
+            {deleteError}
+          </Alert>
+        )}
+      </ModalBody>
+
+      <ModalFooter>
+        <Button
+          variant="danger"
+          onClick={() => void doDelete()}
+          isLoading={deleting}
+          isDisabled={deleting || canDeleteLoading || !canDelete}
+        >
+          {t('Delete')}
+        </Button>
+
+        <Button variant="link" onClick={onClose} isDisabled={deleting}>
+          {t('Cancel')}
+        </Button>
+      </ModalFooter>
+    </Modal>
   );
 };
 
@@ -164,7 +257,6 @@ const ConfidentialWorkloadsList: FC = () => {
   const [statusOpen, setStatusOpen] = useState(false);
   const [sortBy, setSortBy] = useState<ISortBy>({});
   const [toDelete, setToDelete] = useState<CcWorkload | undefined>();
-  const [deleting, setDeleting] = useState(false);
 
   // Self-reported attestation evidence: ConfigMaps the in-guest sidecar publishes
   // (no exec). Keyed by namespace/<configmap-name> so each workload finds its own.
@@ -231,20 +323,6 @@ const ConfidentialWorkloadsList: FC = () => {
     const sorted = [...filtered].sort((a, b) => cell(a[field]).localeCompare(cell(b[field])));
     return sortBy.direction === 'desc' ? sorted.reverse() : sorted;
   }, [workloads, text, ccFilter, nsFilter, statusFilter, rcFilter, sortBy]);
-
-  const doDelete = async () => {
-    if (!toDelete) return;
-    setDeleting(true);
-    try {
-      await k8sDelete({
-        model: toDelete.kind === 'Pod' ? PodModel : DeploymentModel,
-        resource: toDelete.obj,
-      });
-      setToDelete(undefined);
-    } finally {
-      setDeleting(false);
-    }
-  };
 
   const getSortParams = (columnIndex: number) => ({ sortBy, onSort, columnIndex });
 
@@ -504,38 +582,12 @@ const ConfidentialWorkloadsList: FC = () => {
       </PageSection>
 
       {toDelete && (
-        <Modal
-          isOpen
-          variant="small"
+        <DeleteWorkloadConfirmation
+          workload={toDelete}
           onClose={() => {
             setToDelete(undefined);
           }}
-        >
-          <ModalHeader title={t('Delete confidential workload?')} />
-          <ModalBody>
-            {t(
-              'Delete {{kind}} {{name}} in {{namespace}}? Its confidential VM will be torn down.',
-              {
-                kind: toDelete.kind,
-                name: toDelete.name,
-                namespace: toDelete.namespace,
-              },
-            )}
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="danger" onClick={() => void doDelete()} isLoading={deleting}>
-              {t('Delete')}
-            </Button>
-            <Button
-              variant="link"
-              onClick={() => {
-                setToDelete(undefined);
-              }}
-            >
-              {t('Cancel')}
-            </Button>
-          </ModalFooter>
-        </Modal>
+        />
       )}
     </>
   );

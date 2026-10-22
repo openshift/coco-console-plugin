@@ -69,6 +69,9 @@ export type InfrastructureKind = K8sResourceCommon & {
   status?: {
     infrastructureName?: string;
     platform?: string;
+    platformStatus?: {
+      type?: string;
+    };
   };
 };
 

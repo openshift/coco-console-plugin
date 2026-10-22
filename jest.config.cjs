@@ -6,9 +6,12 @@
 module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
-  testMatch: ['**/*.spec.ts'],
+  testMatch: ['**/*.spec.ts', '**/*.spec.tsx'],
   transform: {
-    '^.+\\.[jt]s$': 'babel-jest',
+    '^.+\\.[jt]sx?$': 'babel-jest',
+  },
+  moduleNameMapper: {
+    '\\.(css|scss)$': '<rootDir>/src/test/styleMock.js',
   },
   clearMocks: true,
 };

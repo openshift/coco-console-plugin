@@ -23,6 +23,8 @@ import { CheckCircleIcon } from '@patternfly/react-icons';
 import type { FC } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PermissionHint } from '../utils/rbac/PermissionHint';
+import { useCanCreateNodeFeatureRule } from '../utils/rbac/useCocoPermissions';
 import {
   ClusterVersionGVK,
   CustomResourceDefinitionGVK,
@@ -64,6 +66,7 @@ const isAlreadyExists = (e: unknown): boolean =>
  */
 export const EnableTeeDetection: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
+  const [canCreateRule, canCreateRuleLoading] = useCanCreateNodeFeatureRule();
 
   // The NFD operator is installed iff its CRD is established.
   const [crd] = useK8sWatchResource<K8sResourceCommon>({
@@ -194,11 +197,13 @@ export const EnableTeeDetection: FC = () => {
 
   return (
     <>
+      <PermissionHint allowed={canCreateRule} loading={canCreateRuleLoading} />
       <Button
         variant="secondary"
         onClick={() => {
           setOpen(true);
         }}
+        isDisabled={canCreateRuleLoading || !canCreateRule}
       >
         {t('Enable TEE detection')}
       </Button>
@@ -301,7 +306,7 @@ export const EnableTeeDetection: FC = () => {
               variant="primary"
               onClick={() => void onEnable()}
               isLoading={inFlight}
-              isDisabled={inFlight || !namespace.trim()}
+              isDisabled={inFlight || !namespace.trim() || canCreateRuleLoading || !canCreateRule}
             >
               {error
                 ? t('Retry')

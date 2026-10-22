@@ -57,6 +57,8 @@ import {
   UBI9_IMAGE,
 } from '../k8s/resources';
 import type { DaemonSetKind, DeploymentKind, JobKind, NodeKind } from '../k8s/types';
+import { PermissionHint } from '../utils/rbac/PermissionHint';
+import { useCanCreateJob } from '../utils/rbac/useCocoPermissions';
 import { sgxCapable, sgxDevicePluginReady, TDX_LABEL } from '../utils/tee';
 import { InstallSgxDevicePlugin } from './InstallSgxDevicePlugin';
 import './coco.css';
@@ -277,6 +279,7 @@ interface Props {
  */
 const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
+  const [canCreateJob, canCreateJobLoading] = useCanCreateJob(NS);
 
   const base = useMemo(() => oscDcapHelpersBase(), []);
 
@@ -844,6 +847,7 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
             </Alert>
           )}
         </Form>
+        <PermissionHint allowed={canCreateJob} loading={canCreateJobLoading} />
       </ModalBody>
       <ModalFooter>
         {jobSucceeded ? (
@@ -855,7 +859,11 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
             <Button variant="primary" onClick={onClose}>
               {t('Done')}
             </Button>
-            <Button variant="secondary" onClick={() => void onDeploy()} isDisabled={!valid || busy}>
+            <Button
+              variant="secondary"
+              onClick={() => void onDeploy()}
+              isDisabled={!valid || busy || canCreateJobLoading || !canCreateJob}
+            >
               {t('Re-deploy')}
             </Button>
           </>
@@ -865,7 +873,9 @@ const DeployTdxAttestationModal: FC<Props> = ({ onClose }) => {
               variant="primary"
               onClick={() => void onDeploy()}
               isLoading={busy || (started && !jobFailed)}
-              isDisabled={!valid || busy || (started && !jobFailed)}
+              isDisabled={
+                !valid || busy || (started && !jobFailed) || canCreateJobLoading || !canCreateJob
+              }
             >
               {started && jobFailed ? t('Retry') : t('Deploy attestation infrastructure')}
             </Button>

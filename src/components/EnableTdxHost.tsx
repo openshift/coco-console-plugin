@@ -31,6 +31,8 @@ import {
   MachineConfigPoolGVK,
   NodeGVK,
 } from '../k8s/resources';
+import { PermissionHint } from '../utils/rbac/PermissionHint';
+import { useCanCreateMachineConfig } from '../utils/rbac/useCocoPermissions';
 import type { MachineConfigPoolKind, NodeKind } from '../k8s/types';
 import {
   buildTdxHostMachineConfig,
@@ -78,6 +80,7 @@ const isReady = (node: NodeKind): boolean =>
  */
 export const EnableTdxHost: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
+  const [canCreateMC, canCreateMCLoading] = useCanCreateMachineConfig();
 
   const [mcs] = useK8sWatchResource<MachineConfigKind[]>({
     groupVersionKind: MachineConfigGVK,
@@ -201,11 +204,13 @@ export const EnableTdxHost: FC = () => {
 
   return (
     <>
+      <PermissionHint allowed={canCreateMC} loading={canCreateMCLoading} />
       <Button
         variant="secondary"
         onClick={() => {
           setOpen(true);
         }}
+        isDisabled={canCreateMCLoading || !canCreateMC}
       >
         {t('Enable Intel TDX host')}
       </Button>
@@ -366,7 +371,7 @@ export const EnableTdxHost: FC = () => {
               variant="primary"
               onClick={() => void onCreate()}
               isLoading={busy}
-              isDisabled={applyDisabled}
+              isDisabled={applyDisabled || canCreateMCLoading || !canCreateMC}
             >
               {t('Enable and reboot')}
             </Button>

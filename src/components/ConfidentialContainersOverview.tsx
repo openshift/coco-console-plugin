@@ -42,6 +42,7 @@ import { NodeGVK, RuntimeClassGVK } from '../k8s/resources';
 import { ccClassLabel, classForRuntimeClass, isConfidentialRuntimeClass } from '../utils/runtime';
 import { kataInstallSummary, statusCategory } from '../utils/status';
 import { teeLabel } from '../utils/tee';
+import BaremetalBanner from './BaremetalBanner';
 import { EnableConfidentialContainers } from './EnableConfidentialContainers';
 import './coco.css';
 
@@ -134,7 +135,7 @@ const GettingStarted: FC = () => {
       </FlexItem>
       <FlexItem className="coco-openshift-console-plugin__muted">
         {t(
-          '3. Build initdata and deploy a pod with runtimeClassName: kata-cc, then verify its attestation from the Workloads list.',
+          '3. Build initdata and deploy a pod with runtimeClassName: kata-cc and the attestation evidence sidecar to verify its trust status from the Workloads list.',
         )}
       </FlexItem>
       <FlexItem className="coco-openshift-console-plugin__mt">
@@ -189,6 +190,7 @@ const ConfidentialContainersOverview: FC = () => {
       <ListPageHeader title={t('Confidential containers overview')} />
 
       <PageSection>
+        <BaremetalBanner />
         {/* Feature-gate empty-state: the Confidential Containers menu is gated on
             KataConfig, so it can appear before confidential containers is turned on
             (osc-feature-gates confidential!=true). When the gate is off, surface the

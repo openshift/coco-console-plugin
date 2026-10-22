@@ -38,7 +38,9 @@ import { DaemonSetGVK, DeploymentGVK, INTEL_DCAP_NAMESPACE, KataConfigGVK } from
 import type { DaemonSetKind, DeploymentKind } from '../k8s/types';
 import { isConfidentialRuntimeClass } from '../utils/runtime';
 import { kataInstallSummary } from '../utils/status';
+import BaremetalBanner from './BaremetalBanner';
 import { EnableConfidentialContainers } from './EnableConfidentialContainers';
+import { EnableIommu } from './EnableIommu';
 import { EnableKataConfig } from './EnableKataConfig';
 import DeployTdxAttestationModal from './DeployTdxAttestationModal';
 import './coco.css';
@@ -342,12 +344,60 @@ const CocoSetup: FC = () => {
     });
   }
 
+  if (onNodeTee && (teeKinds.gpu || teeKinds.tdx || teeKinds.snp)) {
+    steps.push({
+      title: t('Confidential GPU prerequisites (Tech Preview)'),
+      status: teeKinds.gpu ? 'done' : 'info',
+      detail: teeKinds.gpu
+        ? t(
+            'GPU-CC nodes detected — NVIDIA confidential GPU labels are present. The kata-cc-nvidia-gpu runtime class is available for workloads.',
+          )
+        : t(
+            'Confidential GPU workloads (NVIDIA H100, bare metal only) need additional setup: an IOMMU MachineConfig (intel_iommu=on or amd_iommu=on, reboots nodes), the NVIDIA GPU Operator with a ClusterPolicy enabling ccManager, kata sandbox device plugin, and vfio-manager, and nodes labeled nvidia.com/cc.mode.state=on and nvidia.com/cc.ready.state=true.',
+          ),
+      node: !teeKinds.gpu ? (
+        <Flex
+          direction={{ default: 'column' }}
+          gap={{ default: 'gapSm' }}
+          alignItems={{ default: 'alignItemsFlexEnd' }}
+        >
+          <FlexItem>
+            <EnableIommu />
+          </FlexItem>
+          <FlexItem>
+            <Button
+              variant="link"
+              component="a"
+              href="https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/index.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              icon={<ExternalLinkAltIcon />}
+              iconPosition="end"
+            >
+              {t('NVIDIA GPU Operator documentation')}
+            </Button>
+          </FlexItem>
+        </Flex>
+      ) : undefined,
+    });
+  }
+
+  if (onNodeTee && teeKinds.snp) {
+    steps.push({
+      title: t('AMD SEV-SNP host readiness'),
+      status: 'done',
+      detail: t(
+        'AMD SEV-SNP nodes are detected and labeled. SEV-SNP is enabled in firmware and the kernel auto-detects it — no additional host kernel arguments are required. Ensure the Trustee SNP verifier can fetch VCEK collateral from the AMD Key Distribution Service (KDS).',
+      ),
+    });
+  }
+
   steps.push({
     title: t('Run a confidential workload'),
     status: ccRuntimeReady ? 'info' : 'todo',
     detail: ccRuntimeReady
       ? t(
-          'Deploy a workload with runtimeClassName: {{runtimeClass}}, then use the Verify attestation action on the Workloads list to check it.',
+          'Deploy a workload with runtimeClassName: {{runtimeClass}} and add the attestation evidence sidecar to verify its trust status from the Workloads list.',
           { runtimeClass: runtimeExample },
         )
       : peerPodsMode
@@ -372,6 +422,8 @@ const CocoSetup: FC = () => {
             </Content>
           </CardBody>
         </Card>
+
+        <BaremetalBanner />
 
         <Card>
           <CardTitle>{t('Setup checklist')}</CardTitle>

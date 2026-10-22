@@ -8,6 +8,8 @@ import {
 } from '@openshift-console/dynamic-plugin-sdk';
 import { Alert, Button, Label, Spinner } from '@patternfly/react-core';
 import { CheckCircleIcon } from '@patternfly/react-icons';
+import { useCanCreateSubscription } from '../utils/rbac/useCocoPermissions';
+import { PermissionHint } from '../utils/rbac/PermissionHint';
 import {
   CustomResourceDefinitionGVK,
   EndpointsGVK,
@@ -45,6 +47,7 @@ interface Props {
  */
 export const InstallSgxDevicePlugin: FC<Props> = ({ ready }) => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
+  const [canCreateSub, subRbacLoading] = useCanCreateSubscription(INTEL_DEVICE_PLUGINS_INSTALL_NS);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [started, setStarted] = useState(false);
@@ -177,18 +180,21 @@ export const InstallSgxDevicePlugin: FC<Props> = ({ ready }) => {
   return (
     <div>
       {!crExists && (
-        <Button
-          variant="secondary"
-          onClick={() => void onInstall()}
-          isLoading={inFlight}
-          isDisabled={inFlight || (started && !error)}
-        >
-          {error
-            ? t('Retry')
-            : crdReady
-              ? t('Create SGX device plugin')
-              : t('Install Intel SGX device plugin')}
-        </Button>
+        <>
+          <PermissionHint allowed={canCreateSub} loading={subRbacLoading} />
+          <Button
+            variant="secondary"
+            onClick={() => void onInstall()}
+            isLoading={inFlight}
+            isDisabled={inFlight || (started && !error) || subRbacLoading || !canCreateSub}
+          >
+            {error
+              ? t('Retry')
+              : crdReady
+                ? t('Create SGX device plugin')
+                : t('Install Intel SGX device plugin')}
+          </Button>
+        </>
       )}
       {status && !error && (
         <div className={`${PREFIX}__mt ${PREFIX}__muted`}>

@@ -33,5 +33,8 @@ if [ ! -d node_modules ]; then
   yarn install --immutable
 fi
 
-echo "Runs Playwright tests in headless mode"
+echo "Install Playwright browsers"
+npx playwright install --with-deps chromium
+
+echo "Run Playwright E2E tests in headless mode"
 yarn test-e2e-headless

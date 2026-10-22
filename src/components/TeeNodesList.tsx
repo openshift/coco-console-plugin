@@ -1,4 +1,9 @@
-import { DocumentTitle, ListPageHeader, ResourceLink } from '@openshift-console/dynamic-plugin-sdk';
+import {
+  DocumentTitle,
+  ListPageHeader,
+  ResourceLink,
+  useK8sWatchResource,
+} from '@openshift-console/dynamic-plugin-sdk';
 import {
   Card,
   CardBody,
@@ -8,24 +13,50 @@ import {
   Flex,
   FlexItem,
   Label,
+  List,
+  ListItem,
   PageSection,
   Skeleton,
+  ToggleGroup,
+  ToggleGroupItem,
 } from '@patternfly/react-core';
-import { CheckCircleIcon, ExclamationTriangleIcon } from '@patternfly/react-icons';
+import { CheckCircleIcon, ExclamationTriangleIcon, InfoCircleIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { FC } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useTeeNodes } from '../k8s/hooks';
-import { NodeGVK } from '../k8s/resources';
+import { useKataConfig, useNodes } from '../k8s/hooks';
+import { MachineConfigPoolGVK, NodeGVK } from '../k8s/resources';
+import type { MachineConfigPoolKind } from '../k8s/types';
+import { computeNodeReadiness, type NodeReadiness } from '../utils/nodeReadiness';
 import { teeLabel } from '../utils/tee';
 import { EnableTdxHost } from './EnableTdxHost';
 import { EnableTeeDetection } from './EnableTeeDetection';
 import { KataNodesPanel } from './KataNodesPanel';
 import './coco.css';
 
+type FilterMode = 'all' | 'tee';
+
 const TeeNodesList: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
-  const { teeNodes, loaded } = useTeeNodes();
+  const [nodes, nodesLoaded] = useNodes();
+  const [kataConfig] = useKataConfig();
+  const [pools] = useK8sWatchResource<MachineConfigPoolKind[]>({
+    groupVersionKind: MachineConfigPoolGVK,
+    isList: true,
+  });
+  const [filter, setFilter] = useState<FilterMode>('all');
+
+  const readiness: NodeReadiness[] = useMemo(
+    () => nodes.map((n) => computeNodeReadiness(n, kataConfig, pools ?? [])),
+    [nodes, kataConfig, pools],
+  );
+
+  const displayed = useMemo(() => {
+    const workers = readiness.filter((r) => r.isWorker);
+    if (filter === 'tee') return workers.filter((r) => r.teeDetected || r.gpuCcReady);
+    return workers;
+  }, [readiness, filter]);
 
   return (
     <>
@@ -41,14 +72,41 @@ const TeeNodesList: FC = () => {
         </Flex>
       </ListPageHeader>
       <PageSection>
-        {!loaded ? (
+        <Flex
+          gap={{ default: 'gapMd' }}
+          alignItems={{ default: 'alignItemsCenter' }}
+          className="coco-openshift-console-plugin__mb"
+        >
+          <FlexItem>
+            <ToggleGroup aria-label={t('Node filter')}>
+              <ToggleGroupItem
+                text={t('All workers')}
+                isSelected={filter === 'all'}
+                onChange={() => {
+                  setFilter('all');
+                }}
+              />
+              <ToggleGroupItem
+                text={t('TEE-capable only')}
+                isSelected={filter === 'tee'}
+                onChange={() => {
+                  setFilter('tee');
+                }}
+              />
+            </ToggleGroup>
+          </FlexItem>
+        </Flex>
+
+        {!nodesLoaded ? (
           <Skeleton width="100%" height="8rem" />
-        ) : teeNodes.length === 0 ? (
-          <EmptyState headingLevel="h4" titleText={t('No TEE-capable nodes detected')}>
+        ) : displayed.length === 0 ? (
+          <EmptyState headingLevel="h4" titleText={t('No worker nodes found')}>
             <EmptyStateBody>
-              {t(
-                'No nodes are labeled with a Trusted Execution Environment yet. Use Enable TEE detection to set up Node Feature Discovery and label Intel TDX or AMD SEV-SNP nodes.',
-              )}
+              {filter === 'tee'
+                ? t(
+                    'No nodes are labeled with a Trusted Execution Environment yet. Use Enable TEE detection to set up Node Feature Discovery and label Intel TDX or AMD SEV-SNP nodes.',
+                  )
+                : t('No worker nodes found')}
             </EmptyStateBody>
             <Flex
               gap={{ default: 'gapSm' }}
@@ -69,27 +127,31 @@ const TeeNodesList: FC = () => {
               <Tr>
                 <Th>{t('Node')}</Th>
                 <Th>{t('TEE')}</Th>
-                <Th>{t('Confidential GPU')}</Th>
+                <Th>{t('GPU CC')}</Th>
+                <Th>{t('Kata')}</Th>
+                <Th>{t('MCP')}</Th>
                 <Th>{t('Ready')}</Th>
+                <Th>{t('Eligible')}</Th>
+                <Th>{t('Reasons')}</Th>
               </Tr>
             </Thead>
             <Tbody>
-              {teeNodes.map((n) => (
-                <Tr key={n.name}>
+              {displayed.map((r) => (
+                <Tr key={r.name}>
                   <Td dataLabel={t('Node')}>
-                    <ResourceLink groupVersionKind={NodeGVK} name={n.name} />
+                    <ResourceLink groupVersionKind={NodeGVK} name={r.name} />
                   </Td>
                   <Td dataLabel={t('TEE')}>
-                    {n.tee !== 'none' ? (
+                    {r.teeType !== 'none' ? (
                       <Label color="blue" isCompact>
-                        {teeLabel(n.tee)}
+                        {teeLabel(r.teeType)}
                       </Label>
                     ) : (
                       <span className="coco-openshift-console-plugin__muted">—</span>
                     )}
                   </Td>
-                  <Td dataLabel={t('Confidential GPU')}>
-                    {n.gpuCcReady ? (
+                  <Td dataLabel={t('GPU CC')}>
+                    {r.gpuCcReady ? (
                       <Label color="purple" isCompact>
                         {t('Ready')}
                       </Label>
@@ -97,8 +159,42 @@ const TeeNodesList: FC = () => {
                       <span className="coco-openshift-console-plugin__muted">—</span>
                     )}
                   </Td>
+                  <Td dataLabel={t('Kata')}>
+                    {r.kataInstalled ? (
+                      <Label color="green" icon={<CheckCircleIcon />} isCompact>
+                        {t('Installed')}
+                      </Label>
+                    ) : r.kataInstalling ? (
+                      <Label color="blue" icon={<InfoCircleIcon />} isCompact>
+                        {t('Installing')}
+                      </Label>
+                    ) : r.kataFailed ? (
+                      <Label color="red" icon={<ExclamationTriangleIcon />} isCompact>
+                        {t('Failed')}
+                      </Label>
+                    ) : (
+                      <span className="coco-openshift-console-plugin__muted">
+                        {t('Not installed')}
+                      </span>
+                    )}
+                  </Td>
+                  <Td dataLabel={t('MCP')}>
+                    {r.mcpUpdating ? (
+                      <Label color="blue" isCompact>
+                        {t('Updating')}
+                      </Label>
+                    ) : r.mcpUpdated ? (
+                      <Label color="green" isCompact>
+                        {t('Updated')}
+                      </Label>
+                    ) : (
+                      <Label color="orange" isCompact>
+                        {t('Not updated')}
+                      </Label>
+                    )}
+                  </Td>
                   <Td dataLabel={t('Ready')}>
-                    {n.ready ? (
+                    {r.nodeReady ? (
                       <Label color="green" icon={<CheckCircleIcon />} isCompact>
                         {t('Ready')}
                       </Label>
@@ -106,6 +202,30 @@ const TeeNodesList: FC = () => {
                       <Label color="orange" icon={<ExclamationTriangleIcon />} isCompact>
                         {t('Not ready')}
                       </Label>
+                    )}
+                  </Td>
+                  <Td dataLabel={t('Eligible')}>
+                    {r.eligible ? (
+                      <Label color="green" icon={<CheckCircleIcon />} isCompact>
+                        {t('Eligible')}
+                      </Label>
+                    ) : (
+                      <Label color="orange" icon={<ExclamationTriangleIcon />} isCompact>
+                        {t('Not eligible')}
+                      </Label>
+                    )}
+                  </Td>
+                  <Td dataLabel={t('Reasons')}>
+                    {r.reasons.length > 0 ? (
+                      <List isPlain>
+                        {r.reasons.map((reason) => (
+                          <ListItem key={reason}>
+                            <span className="coco-openshift-console-plugin__muted">{reason}</span>
+                          </ListItem>
+                        ))}
+                      </List>
+                    ) : (
+                      <span className="coco-openshift-console-plugin__muted">—</span>
                     )}
                   </Td>
                 </Tr>

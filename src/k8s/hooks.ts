@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import {
   CC_INIT_DATA_ANNOTATION,
   ConfigMapGVK,
+  InfrastructureGVK,
   KataConfigGVK,
   NodeGVK,
   OSC_FEATURE_GATES_CM,
@@ -15,6 +16,7 @@ import type {
   CcClass,
   CcWorkload,
   ConfigMapKind,
+  InfrastructureKind,
   KataConfigKind,
   NodeKind,
   PodKind,
@@ -83,6 +85,36 @@ export const useCvmPeerPods = (): boolean => {
     name: PEER_PODS_CM,
   });
   return cvmPeerPodsEnabled(peerPodsCm?.data);
+};
+
+export const useCvmPeerPodsStatus = (): [boolean, boolean] => {
+  const [cm, loaded, error] = useK8sWatchResource<ConfigMapKind>({
+    groupVersionKind: ConfigMapGVK,
+    namespace: OSC_NAMESPACE,
+    name: PEER_PODS_CM,
+  });
+
+  const e = error as
+    | {
+        code?: number | string;
+        status?: number | string;
+        response?: { status?: number };
+      }
+    | undefined;
+
+  const status = Number(e?.code ?? e?.status ?? e?.response?.status);
+
+  const ready = (loaded && !error) || status === 404;
+
+  return [cvmPeerPodsEnabled(cm?.data), ready];
+};
+
+export const useInfrastructurePlatform = (): [string | undefined, boolean] => {
+  const [infra, loaded] = useK8sWatchResource<InfrastructureKind>({
+    groupVersionKind: InfrastructureGVK,
+    name: 'cluster',
+  });
+  return [infra?.status?.platformStatus?.type ?? infra?.status?.platform, loaded];
 };
 
 export const useNodes = (): [NodeKind[], boolean] => {
