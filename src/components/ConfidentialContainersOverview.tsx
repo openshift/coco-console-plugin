@@ -25,6 +25,7 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
   ExclamationTriangleIcon,
+  InfoCircleIcon,
 } from '@patternfly/react-icons';
 import type { FC } from 'react';
 import { useMemo } from 'react';
@@ -102,15 +103,42 @@ const HealthBar: FC<{ healthy: number; warning: number; error: number }> = ({
         )}
       </div>
       <Flex gap={{ default: 'gapMd' }} className="coco-openshift-console-plugin__mt">
-        <Label color="green" icon={<CheckCircleIcon />} isCompact>
-          {t('Healthy')}: {healthy}
-        </Label>
-        <Label color="orange" icon={<ExclamationTriangleIcon />} isCompact>
-          {t('Pending')}: {warning}
-        </Label>
-        <Label color="red" icon={<ExclamationCircleIcon />} isCompact>
-          {t('Error')}: {error}
-        </Label>
+        <FlexItem>
+          <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+            <FlexItem>
+              <CheckCircleIcon
+                className="coco-openshift-console-plugin__icon-success"
+                aria-hidden
+              />
+            </FlexItem>
+            <FlexItem>
+              {t('Healthy')}: {healthy}
+            </FlexItem>
+          </Flex>
+        </FlexItem>
+        <FlexItem>
+          <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+            <FlexItem>
+              <InfoCircleIcon className="coco-openshift-console-plugin__icon-info" aria-hidden />
+            </FlexItem>
+            <FlexItem>
+              {t('Pending')}: {warning}
+            </FlexItem>
+          </Flex>
+        </FlexItem>
+        <FlexItem>
+          <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+            <FlexItem>
+              <ExclamationCircleIcon
+                className="coco-openshift-console-plugin__icon-error"
+                aria-hidden
+              />
+            </FlexItem>
+            <FlexItem>
+              {t('Error')}: {error}
+            </FlexItem>
+          </Flex>
+        </FlexItem>
       </Flex>
     </>
   );
@@ -279,13 +307,31 @@ const ConfidentialContainersOverview: FC = () => {
                       <DescriptionListTerm>{t('Confidential containers')}</DescriptionListTerm>
                       <DescriptionListDescription>
                         {ccEnabled ? (
-                          <Label color="green" icon={<CheckCircleIcon />}>
-                            {t('Enabled')}
-                          </Label>
+                          <Flex
+                            gap={{ default: 'gapXs' }}
+                            alignItems={{ default: 'alignItemsCenter' }}
+                          >
+                            <FlexItem>
+                              <CheckCircleIcon
+                                className="coco-openshift-console-plugin__icon-success"
+                                aria-hidden
+                              />
+                            </FlexItem>
+                            <FlexItem>{t('Enabled')}</FlexItem>
+                          </Flex>
                         ) : (
-                          <Label color="orange" icon={<ExclamationTriangleIcon />}>
-                            {t('Not enabled')}
-                          </Label>
+                          <Flex
+                            gap={{ default: 'gapXs' }}
+                            alignItems={{ default: 'alignItemsCenter' }}
+                          >
+                            <FlexItem>
+                              <ExclamationTriangleIcon
+                                className="coco-openshift-console-plugin__icon-warning"
+                                aria-hidden
+                              />
+                            </FlexItem>
+                            <FlexItem>{t('Not enabled')}</FlexItem>
+                          </Flex>
                         )}
                       </DescriptionListDescription>
                     </DescriptionListGroup>
@@ -293,22 +339,62 @@ const ConfidentialContainersOverview: FC = () => {
                       <DescriptionListTerm>{t('KataConfig')}</DescriptionListTerm>
                       <DescriptionListDescription>
                         {kata.state === 'installed' ? (
-                          <Label color="green" icon={<CheckCircleIcon />}>
-                            {t('Installed')}
-                          </Label>
+                          <Flex
+                            gap={{ default: 'gapXs' }}
+                            alignItems={{ default: 'alignItemsCenter' }}
+                          >
+                            <FlexItem>
+                              <CheckCircleIcon
+                                className="coco-openshift-console-plugin__icon-success"
+                                aria-hidden
+                              />
+                            </FlexItem>
+                            <FlexItem>{t('Installed')}</FlexItem>
+                          </Flex>
                         ) : kata.state === 'inProgress' ? (
-                          <Label color="orange">
-                            {t('In progress')}
-                            {kata.reason ? ` (${kata.reason})` : ''}
-                          </Label>
+                          <Flex
+                            gap={{ default: 'gapXs' }}
+                            alignItems={{ default: 'alignItemsCenter' }}
+                          >
+                            <FlexItem>
+                              <InfoCircleIcon
+                                className="coco-openshift-console-plugin__icon-info"
+                                aria-hidden
+                              />
+                            </FlexItem>
+                            <FlexItem>
+                              {t('In progress')}
+                              {kata.reason ? ` (${kata.reason})` : ''}
+                            </FlexItem>
+                          </Flex>
                         ) : kata.state === 'failed' ? (
-                          <Label color="red" icon={<ExclamationCircleIcon />}>
-                            {t('Failed')}: {kata.failed.join(', ')}
-                          </Label>
+                          <Flex
+                            gap={{ default: 'gapXs' }}
+                            alignItems={{ default: 'alignItemsCenter' }}
+                          >
+                            <FlexItem>
+                              <ExclamationCircleIcon
+                                className="coco-openshift-console-plugin__icon-error"
+                                aria-hidden
+                              />
+                            </FlexItem>
+                            <FlexItem>
+                              {t('Failed')}: {kata.failed.join(', ')}
+                            </FlexItem>
+                          </Flex>
                         ) : (
-                          <Label color="red" icon={<ExclamationTriangleIcon />}>
-                            {t('Not installed')}
-                          </Label>
+                          <Flex
+                            gap={{ default: 'gapXs' }}
+                            alignItems={{ default: 'alignItemsCenter' }}
+                          >
+                            <FlexItem>
+                              <ExclamationTriangleIcon
+                                className="coco-openshift-console-plugin__icon-warning"
+                                aria-hidden
+                              />
+                            </FlexItem>
+                            <FlexItem>{t('Not installed')}</FlexItem>
+                          </Flex>
                         )}
                       </DescriptionListDescription>
                     </DescriptionListGroup>
@@ -353,16 +439,22 @@ const ConfidentialContainersOverview: FC = () => {
                               <ResourceLink groupVersionKind={NodeGVK} name={n.name} />
                             </FlexItem>
                             <FlexItem>
-                              {n.tee !== 'none' && (
-                                <Label color="blue" isCompact>
-                                  {teeLabel(n.tee)}
-                                </Label>
-                              )}{' '}
-                              {n.gpuCcReady && (
-                                <Label color="purple" isCompact>
-                                  {t('GPU CC')}
-                                </Label>
-                              )}
+                              <Flex gap={{ default: 'gapXs' }}>
+                                {n.tee !== 'none' && (
+                                  <FlexItem>
+                                    <Label variant="outline" isCompact>
+                                      {teeLabel(n.tee)}
+                                    </Label>
+                                  </FlexItem>
+                                )}
+                                {n.gpuCcReady && (
+                                  <FlexItem>
+                                    <Label variant="outline" isCompact>
+                                      {t('GPU CC')}
+                                    </Label>
+                                  </FlexItem>
+                                )}
+                              </Flex>
                             </FlexItem>
                           </Flex>
                         </FlexItem>
@@ -416,7 +508,7 @@ const ConfidentialContainersOverview: FC = () => {
                             />
                           </FlexItem>
                           <FlexItem>
-                            <Label color="blue" isCompact>
+                            <Label variant="outline" isCompact>
                               {ccClassLabel(classForRuntimeClass(rc))}
                             </Label>
                           </FlexItem>

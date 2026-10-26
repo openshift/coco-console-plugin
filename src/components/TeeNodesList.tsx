@@ -20,7 +20,12 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from '@patternfly/react-core';
-import { CheckCircleIcon, ExclamationTriangleIcon, InfoCircleIcon } from '@patternfly/react-icons';
+import {
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  ExclamationCircleIcon,
+  InfoCircleIcon,
+} from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { FC } from 'react';
 import { useMemo, useState } from 'react';
@@ -143,7 +148,7 @@ const TeeNodesList: FC = () => {
                   </Td>
                   <Td dataLabel={t('TEE')}>
                     {r.teeType !== 'none' ? (
-                      <Label color="blue" isCompact>
+                      <Label variant="outline" isCompact>
                         {teeLabel(r.teeType)}
                       </Label>
                     ) : (
@@ -152,26 +157,50 @@ const TeeNodesList: FC = () => {
                   </Td>
                   <Td dataLabel={t('GPU CC')}>
                     {r.gpuCcReady ? (
-                      <Label color="purple" isCompact>
-                        {t('Ready')}
-                      </Label>
+                      <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+                        <FlexItem>
+                          <CheckCircleIcon
+                            className="coco-openshift-console-plugin__icon-success"
+                            aria-hidden
+                          />
+                        </FlexItem>
+                        <FlexItem>{t('Ready')}</FlexItem>
+                      </Flex>
                     ) : (
                       <span className="coco-openshift-console-plugin__muted">—</span>
                     )}
                   </Td>
                   <Td dataLabel={t('Kata')}>
                     {r.kataInstalled ? (
-                      <Label color="green" icon={<CheckCircleIcon />} isCompact>
-                        {t('Installed')}
-                      </Label>
+                      <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+                        <FlexItem>
+                          <CheckCircleIcon
+                            className="coco-openshift-console-plugin__icon-success"
+                            aria-hidden
+                          />
+                        </FlexItem>
+                        <FlexItem>{t('Installed')}</FlexItem>
+                      </Flex>
                     ) : r.kataInstalling ? (
-                      <Label color="blue" icon={<InfoCircleIcon />} isCompact>
-                        {t('Installing')}
-                      </Label>
+                      <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+                        <FlexItem>
+                          <InfoCircleIcon
+                            className="coco-openshift-console-plugin__icon-info"
+                            aria-hidden
+                          />
+                        </FlexItem>
+                        <FlexItem>{t('Installing')}</FlexItem>
+                      </Flex>
                     ) : r.kataFailed ? (
-                      <Label color="red" icon={<ExclamationTriangleIcon />} isCompact>
-                        {t('Failed')}
-                      </Label>
+                      <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+                        <FlexItem>
+                          <ExclamationCircleIcon
+                            className="coco-openshift-console-plugin__icon-error"
+                            aria-hidden
+                          />
+                        </FlexItem>
+                        <FlexItem>{t('Failed')}</FlexItem>
+                      </Flex>
                     ) : (
                       <span className="coco-openshift-console-plugin__muted">
                         {t('Not installed')}
@@ -180,39 +209,81 @@ const TeeNodesList: FC = () => {
                   </Td>
                   <Td dataLabel={t('MCP')}>
                     {r.mcpUpdating ? (
-                      <Label color="blue" isCompact>
-                        {t('Updating')}
-                      </Label>
+                      <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+                        <FlexItem>
+                          <InfoCircleIcon
+                            className="coco-openshift-console-plugin__icon-info"
+                            aria-hidden
+                          />
+                        </FlexItem>
+                        <FlexItem>{t('Updating')}</FlexItem>
+                      </Flex>
                     ) : r.mcpUpdated ? (
-                      <Label color="green" isCompact>
-                        {t('Updated')}
-                      </Label>
+                      <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+                        <FlexItem>
+                          <CheckCircleIcon
+                            className="coco-openshift-console-plugin__icon-success"
+                            aria-hidden
+                          />
+                        </FlexItem>
+                        <FlexItem>{t('Updated')}</FlexItem>
+                      </Flex>
                     ) : (
-                      <Label color="orange" isCompact>
-                        {t('Not updated')}
-                      </Label>
+                      <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+                        <FlexItem>
+                          <ExclamationTriangleIcon
+                            className="coco-openshift-console-plugin__icon-warning"
+                            aria-hidden
+                          />
+                        </FlexItem>
+                        <FlexItem>{t('Not updated')}</FlexItem>
+                      </Flex>
                     )}
                   </Td>
                   <Td dataLabel={t('Ready')}>
                     {r.nodeReady ? (
-                      <Label color="green" icon={<CheckCircleIcon />} isCompact>
-                        {t('Ready')}
-                      </Label>
+                      <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+                        <FlexItem>
+                          <CheckCircleIcon
+                            className="coco-openshift-console-plugin__icon-success"
+                            aria-hidden
+                          />
+                        </FlexItem>
+                        <FlexItem>{t('Ready')}</FlexItem>
+                      </Flex>
                     ) : (
-                      <Label color="orange" icon={<ExclamationTriangleIcon />} isCompact>
-                        {t('Not ready')}
-                      </Label>
+                      <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+                        <FlexItem>
+                          <ExclamationTriangleIcon
+                            className="coco-openshift-console-plugin__icon-warning"
+                            aria-hidden
+                          />
+                        </FlexItem>
+                        <FlexItem>{t('Not ready')}</FlexItem>
+                      </Flex>
                     )}
                   </Td>
                   <Td dataLabel={t('Eligible')}>
                     {r.eligible ? (
-                      <Label color="green" icon={<CheckCircleIcon />} isCompact>
-                        {t('Eligible')}
-                      </Label>
+                      <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+                        <FlexItem>
+                          <CheckCircleIcon
+                            className="coco-openshift-console-plugin__icon-success"
+                            aria-hidden
+                          />
+                        </FlexItem>
+                        <FlexItem>{t('Eligible')}</FlexItem>
+                      </Flex>
                     ) : (
-                      <Label color="orange" icon={<ExclamationTriangleIcon />} isCompact>
-                        {t('Not eligible')}
-                      </Label>
+                      <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+                        <FlexItem>
+                          <ExclamationTriangleIcon
+                            className="coco-openshift-console-plugin__icon-warning"
+                            aria-hidden
+                          />
+                        </FlexItem>
+                        <FlexItem>{t('Not eligible')}</FlexItem>
+                      </Flex>
                     )}
                   </Td>
                   <Td dataLabel={t('Reasons')}>

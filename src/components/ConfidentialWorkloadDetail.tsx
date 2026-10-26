@@ -147,10 +147,7 @@ const ConfidentialWorkloadDetail: FC = () => {
           <BreadcrumbItem isActive>{name}</BreadcrumbItem>
         </Breadcrumb>
       </PageSection>
-      <ListPageHeader
-        title={name ?? ''}
-        badge={workload ? <CcClassLabel ccClass={workload.ccClass} /> : null}
-      />
+      <ListPageHeader title={name ?? ''} />
 
       <PageSection>
         <Tabs

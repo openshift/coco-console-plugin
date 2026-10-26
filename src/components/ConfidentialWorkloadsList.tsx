@@ -14,6 +14,8 @@ import {
   DropdownList,
   EmptyState,
   EmptyStateBody,
+  Flex,
+  FlexItem,
   Label,
   MenuToggle,
   Modal,
@@ -30,7 +32,13 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core';
-import { EllipsisVIcon } from '@patternfly/react-icons';
+import {
+  EllipsisVIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  ExclamationCircleIcon,
+  InfoCircleIcon,
+} from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ISortBy, OnSort } from '@patternfly/react-table';
 import type { FC } from 'react';
@@ -42,7 +50,7 @@ import { ConfigMapGVK, DeploymentModel, NamespaceGVK, PodModel } from '../k8s/re
 import type { CcWorkload, ConfigMapKind } from '../k8s/types';
 import { PermissionHint } from '../utils/rbac/PermissionHint';
 import { useCanDeleteWorkload } from '../utils/rbac/useCocoPermissions';
-import { statusCategory, statusColor } from '../utils/status';
+import { statusCategory } from '../utils/status';
 import { EVIDENCE_LABEL, parseEvidence, type EvidenceRecord } from '../utils/evidence';
 import { CcClassLabel } from './CcClassLabel';
 import './coco.css';
@@ -284,16 +292,46 @@ const ConfidentialWorkloadsList: FC = () => {
           (e.workload?.name === w.name || (e.workload?.name ?? '').startsWith(`${w.name}-`)),
       )
       .sort((a, b) => (b.timestamp ?? '').localeCompare(a.timestamp ?? ''))[0];
-  const evidenceVerdictLabel = (
-    ev?: EvidenceRecord,
-  ): { color: 'green' | 'red' | 'orange' | 'grey'; text: string } =>
+  const evidenceVerdictIcon = (ev?: EvidenceRecord): { icon: React.ReactNode; text: string } =>
     ev?.verdict === 'passed'
-      ? { color: 'green', text: t('attested') }
+      ? {
+          icon: (
+            <CheckCircleIcon
+              className="coco-openshift-console-plugin__icon-success"
+              aria-label={t('Passed')}
+            />
+          ),
+          text: t('attested'),
+        }
       : ev?.verdict === 'failed'
-        ? { color: 'red', text: t('rejected') }
+        ? {
+            icon: (
+              <ExclamationCircleIcon
+                className="coco-openshift-console-plugin__icon-error"
+                aria-label={t('Failed')}
+              />
+            ),
+            text: t('rejected'),
+          }
         : ev?.verdict === 'inconclusive'
-          ? { color: 'orange', text: t('inconclusive') }
-          : { color: 'grey', text: t('no sidecar') };
+          ? {
+              icon: (
+                <ExclamationTriangleIcon
+                  className="coco-openshift-console-plugin__icon-warning"
+                  aria-label={t('Warning')}
+                />
+              ),
+              text: t('inconclusive'),
+            }
+          : {
+              icon: (
+                <InfoCircleIcon
+                  className="coco-openshift-console-plugin__icon-info"
+                  aria-label={t('Info')}
+                />
+              ),
+              text: t('no sidecar'),
+            };
 
   const namespaces = useMemo(
     () => [...new Set(workloads.map((w) => w.namespace))].sort(),
@@ -334,6 +372,35 @@ const ConfidentialWorkloadsList: FC = () => {
         : value === 'error'
           ? t('Error')
           : t('All statuses');
+
+  const statusIcon = (status: string) => {
+    if (status === 'Running' || status === 'Succeeded' || status === 'Available') {
+      return (
+        <CheckCircleIcon className="coco-openshift-console-plugin__icon-success" aria-hidden />
+      );
+    }
+    if (
+      status === 'Pending' ||
+      status === 'Progressing' ||
+      status === 'ContainerCreating' ||
+      status === 'PodInitializing' ||
+      status === 'Terminating'
+    ) {
+      return <InfoCircleIcon className="coco-openshift-console-plugin__icon-info" aria-hidden />;
+    }
+    if (
+      status === 'Failed' ||
+      status === 'Error' ||
+      status === 'CrashLoopBackOff' ||
+      status === 'ImagePullBackOff' ||
+      status === 'ErrImagePull'
+    ) {
+      return (
+        <ExclamationCircleIcon className="coco-openshift-console-plugin__icon-error" aria-hidden />
+      );
+    }
+    return <InfoCircleIcon className="coco-openshift-console-plugin__icon-info" aria-hidden />;
+  };
 
   return (
     <>
@@ -511,7 +578,7 @@ const ConfidentialWorkloadsList: FC = () => {
             <Tbody>
               {rows.map((w) => {
                 const ev = evidenceFor(w);
-                const verdict = evidenceVerdictLabel(ev);
+                const verdict = evidenceVerdictIcon(ev);
                 return (
                   <Tr key={w.uid}>
                     <Td dataLabel={t('Name')}>
@@ -533,25 +600,21 @@ const ConfidentialWorkloadsList: FC = () => {
                       <CcClassLabel ccClass={w.ccClass} isCompact />
                     </Td>
                     <Td dataLabel={t('Initdata')}>
-                      {w.hasInitData ? (
-                        <Label color="green" isCompact>
-                          {t('Yes')}
-                        </Label>
-                      ) : (
-                        <Label color="grey" isCompact>
-                          {t('No')}
-                        </Label>
-                      )}
+                      <Label color="grey" variant="outline" isCompact>
+                        {w.hasInitData ? t('Yes') : t('No')}
+                      </Label>
                     </Td>
                     <Td dataLabel={t('Status')}>
-                      <Label color={statusColor(w.status)} isCompact>
-                        {w.ready ? `${w.status} (${w.ready})` : w.status}
-                      </Label>
+                      <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+                        <FlexItem>{statusIcon(w.status)}</FlexItem>
+                        <FlexItem>{w.ready ? `${w.status} (${w.ready})` : w.status}</FlexItem>
+                      </Flex>
                     </Td>
                     <Td dataLabel={t('Report')}>
-                      <Label color={verdict.color} isCompact>
-                        {verdict.text}
-                      </Label>
+                      <Flex gap={{ default: 'gapXs' }} alignItems={{ default: 'alignItemsCenter' }}>
+                        <FlexItem>{verdict.icon}</FlexItem>
+                        <FlexItem>{verdict.text}</FlexItem>
+                      </Flex>
                     </Td>
                     <Td dataLabel={t('Restarts')}>
                       {w.kind === 'Pod' ? (

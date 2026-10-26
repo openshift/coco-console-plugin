@@ -88,6 +88,10 @@
   color: var(--pf-t--global--icon--color--status--warning--default);
 }
 
+.coco-openshift-console-plugin__icon-error {
+  color: var(--pf-t--global--icon--color--status--danger--default);
+}
+
 .coco-openshift-console-plugin__icon-info {
   color: var(--pf-t--global--icon--color--status--info--default);
 }
