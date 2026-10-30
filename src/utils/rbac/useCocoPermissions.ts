@@ -5,14 +5,15 @@ import {
   KataConfigModel,
   MachineConfigModel,
   NodeFeatureRuleModel,
-  JobModel,
   PodModel,
   DeploymentModel,
   NamespaceModel,
   PersistentVolumeClaimModel,
+  SecretModel,
   ServiceAccountModel,
   RoleModel,
   RoleBindingModel,
+  TdxQuoteGenerationServiceModel,
   OSC_NAMESPACE,
   OSC_FEATURE_GATES_CM,
 } from '../../k8s/resources';
@@ -27,8 +28,16 @@ export const useCanCreateMachineConfig = () =>
 export const useCanCreateNodeFeatureRule = () =>
   useAccessReview({ ...asAccessReview(NodeFeatureRuleModel, 'create', 'openshift-nfd') });
 
-export const useCanCreateJob = (namespace: string) =>
-  useAccessReview({ ...asAccessReview(JobModel, 'create', namespace) });
+/**
+ * Can the user create the cluster-scoped TdxQuoteGenerationService singleton
+ * (the Intel TDX DCAP operator flow)? No namespace — the CR is cluster-scoped.
+ */
+export const useCanCreateTqgs = () =>
+  useAccessReview({ ...asAccessReview(TdxQuoteGenerationServiceModel, 'create') });
+
+/** Can the user create the Intel PCS API key Secret (in the operator namespace)? */
+export const useCanCreateDcapSecret = (namespace: string) =>
+  useAccessReview({ ...asAccessReview(SecretModel, 'create', namespace) });
 
 /**
  * useCanCreateWorkload — check if the user can create a workload of a specific kind.

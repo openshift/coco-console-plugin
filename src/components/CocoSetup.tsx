@@ -1,9 +1,4 @@
-import {
-  DocumentTitle,
-  ListPageHeader,
-  ResourceLink,
-  useK8sWatchResource,
-} from '@openshift-console/dynamic-plugin-sdk';
+import { DocumentTitle, ListPageHeader, ResourceLink } from '@openshift-console/dynamic-plugin-sdk';
 import {
   Button,
   Card,
@@ -31,13 +26,23 @@ import {
   useConfidentialEnabled,
   useCvmPeerPods,
   useKataConfig,
+  useLegacyTdxAttestationInfra,
   useRuntimeClasses,
   useTeeNodes,
+  useTdxQuoteGenerationService,
 } from '../k8s/hooks';
-import { DaemonSetGVK, DeploymentGVK, INTEL_DCAP_NAMESPACE, KataConfigGVK } from '../k8s/resources';
-import type { DaemonSetKind, DeploymentKind } from '../k8s/types';
+import {
+  DaemonSetGVK,
+  DeploymentGVK,
+  INTEL_DCAP_DOCS_URL,
+  INTEL_DCAP_OPERATOR_NAMESPACE,
+  KataConfigGVK,
+  TdxQuoteGenerationServiceGVK,
+  TQGS_CR_NAME,
+} from '../k8s/resources';
 import { isConfidentialRuntimeClass } from '../utils/runtime';
 import { kataInstallSummary } from '../utils/status';
+import { summarizeTqgs } from '../utils/tdxQuoteGenerationService';
 import BaremetalBanner from './BaremetalBanner';
 import { EnableConfidentialContainers } from './EnableConfidentialContainers';
 import { EnableIommu } from './EnableIommu';
@@ -104,26 +109,24 @@ const CocoSetup: FC = () => {
   // TDX quotes are signed by an SGX enclave, so the QGS needs it to schedule.
   const sgxPluginReady = teeNodes.some((n) => n.tee === 'tdx' && n.sgxDevicePlugin);
 
-  // Live status of the Intel TDX remote-attestation infrastructure (PCCS + QGS).
-  // Named-resource watches 404 silently when absent; we only read readiness.
-  const [pccsDep] = useK8sWatchResource<DeploymentKind>({
-    groupVersionKind: DeploymentGVK,
-    name: 'pccs',
-    namespace: INTEL_DCAP_NAMESPACE,
-  });
-  const [qgsDs] = useK8sWatchResource<DaemonSetKind>({
-    groupVersionKind: DaemonSetGVK,
-    name: 'tdx-qgs',
-    namespace: INTEL_DCAP_NAMESPACE,
-  });
-  const qgsDesired = qgsDs?.status?.desiredNumberScheduled ?? 0;
-  const qgsReady = qgsDs?.status?.numberReady ?? 0;
-  const attestPresent = Boolean(pccsDep?.metadata) || Boolean(qgsDs?.metadata);
-  const attestReady =
-    (pccsDep?.status?.availableReplicas ?? 0) > 0 && qgsDesired > 0 && qgsReady >= qgsDesired;
-  // QGS deployed but not running, and the SGX device plugin isn't advertising — the
-  // classic "QGS Pending" cause.
-  const qgsBlockedOnSgx = attestPresent && qgsReady < Math.max(qgsDesired, 1) && !sgxPluginReady;
+  // Live status of the Intel TDX remote-attestation infrastructure: the Intel TDX
+  // DCAP operator's TdxQuoteGenerationService singleton. Readiness comes from the
+  // operator's own reconciliation (the Ready condition + DaemonSet/registrar
+  // counts), never from the CR's mere existence. Also detect the obsolete OSC 1.12
+  // manually deployed PCCS/QGS stack, which must be migrated before the operator
+  // flow works — that detection is warning-only; nothing is deleted automatically.
+  const { cr: tqgsCr, crdInstalled: tqgsCrdInstalled } = useTdxQuoteGenerationService();
+  const legacy = useLegacyTdxAttestationInfra();
+  const tqgs = summarizeTqgs(tqgsCr, tqgsCrdInstalled);
+  const attestPresent = tqgsCr !== undefined;
+  const attestReady = tqgs.phase === 'ready';
+  // QGS reconciled but not ready, and the SGX device plugin isn't advertising —
+  // the classic "QGS Pending" cause.
+  const qgsBlockedOnSgx =
+    attestPresent &&
+    !attestReady &&
+    (tqgs.desired === 0 || tqgs.ready < tqgs.desired) &&
+    !sgxPluginReady;
 
   const [tdxSetupOpen, setTdxSetupOpen] = useState(false);
 
@@ -224,21 +227,22 @@ const CocoSetup: FC = () => {
     node: !ccRuntimeReady && !kataConfig ? <EnableKataConfig /> : undefined,
   });
 
-  // Host quote-generation infrastructure (Intel DCAP: PCCS + QGS). Only bare-metal
+  // Host quote-generation infrastructure (Intel TDX DCAP operator). Only bare-metal
   // TEE nodes need this — a cloud Confidential VM produces its own evidence and
   // Trustee verifies it remotely against the cloud provider / Intel PCS, so this
   // step is skipped on peer-pods-only clusters (#18).
   if (onNodeTee) {
     steps.push({
       title: t('Attestation infrastructure (TEE quote generation)'),
-      // For Intel TDX this is now live (PCCS + QGS watched in intel-dcap). It is the
-      // most commonly-missed prerequisite — without it every attestation fails with
-      // an empty quote — so when it is absent we flag it as a warning.
-      status: attestReady ? 'done' : attestPresent ? 'info' : 'warn',
+      // For Intel TDX this is live (TdxQuoteGenerationService status watched). It is
+      // the most commonly-missed prerequisite — without it every attestation fails
+      // with an empty quote — so when it is absent we flag it as a warning.
+      status: attestReady ? 'done' : attestPresent && tqgs.phase !== 'failed' ? 'info' : 'warn',
       detail: attestReady ? (
         <>
           {t(
-            'Intel TDX quote generation is running — PCCS (PCK certificate cache) and the per-node QGS are up in the intel-dcap namespace, so TDX pods can produce signed quotes.',
+            'Intel TDX quote generation is running — the Intel TDX DCAP operator QGS DaemonSet is ready on {{ready}}/{{desired}} node(s), so TDX pods can produce signed quotes.',
+            { ready: tqgs.ready, desired: tqgs.desired },
           )}
           <Flex
             alignItems={{ default: 'alignItemsCenter' }}
@@ -247,40 +251,94 @@ const CocoSetup: FC = () => {
           >
             <FlexItem>
               <ResourceLink
-                groupVersionKind={DeploymentGVK}
-                name="pccs"
-                namespace={INTEL_DCAP_NAMESPACE}
+                groupVersionKind={TdxQuoteGenerationServiceGVK}
+                name={TQGS_CR_NAME}
                 inline
               />
             </FlexItem>
             <FlexItem>
               <ResourceLink
                 groupVersionKind={DaemonSetGVK}
-                name="tdx-qgs"
-                namespace={INTEL_DCAP_NAMESPACE}
+                name={tqgs.daemonsetName ?? `${TQGS_CR_NAME}-qgs`}
+                namespace={INTEL_DCAP_OPERATOR_NAMESPACE}
                 inline
               />
             </FlexItem>
+            {tqgs.onlineMode && (
+              <FlexItem>
+                <ResourceLink
+                  groupVersionKind={DeploymentGVK}
+                  name={tqgs.registrationDeploymentName ?? `${TQGS_CR_NAME}-registrar`}
+                  namespace={INTEL_DCAP_OPERATOR_NAMESPACE}
+                  inline
+                />
+              </FlexItem>
+            )}
           </Flex>
         </>
       ) : (
         <>
           {attestPresent
-            ? qgsBlockedOnSgx
+            ? tqgs.phase === 'failed'
               ? t(
-                  'PCCS is up, but the QGS DaemonSet is Pending: the Intel SGX device plugin is not advertising sgx.intel.com/enclave + /provision yet. Open the setup to install it (TDX quotes are signed by an SGX enclave).',
+                  'Intel TDX attestation reconciliation failed: {{message}} Open the custom resource for details.',
+                  { message: tqgs.message ?? '' },
+                )
+              : qgsBlockedOnSgx
+                ? t(
+                    'The QGS DaemonSet is Pending: the Intel SGX device plugin is not advertising sgx.intel.com/enclave + /provision yet. Open the setup to install it (TDX quotes are signed by an SGX enclave).',
+                  )
+                : tqgs.zeroNodes
+                  ? t(
+                      'The Intel TDX DCAP operator reconciled the service but scheduled the QGS on zero nodes — no node matches its node selector.',
+                    )
+                  : !tqgs.statusObserved
+                    ? t(
+                        'The Intel TDX DCAP operator has not reported status yet — if this persists, check the operator pod in {{namespace}}.',
+                        { namespace: INTEL_DCAP_OPERATOR_NAMESPACE },
+                      )
+                    : tqgs.staleStatus
+                      ? t(
+                          'The TdxQuoteGenerationService configuration changed — the Intel TDX DCAP operator is re-reconciling the QGS DaemonSet.',
+                        )
+                      : t(
+                          'The Intel TDX DCAP operator is deploying the QGS ({{ready}}/{{desired}} node(s) ready). It completes once the QGS DaemonSet is running on your TDX nodes.',
+                          { ready: tqgs.ready, desired: tqgs.desired },
+                        )
+            : tqgsCrdInstalled
+              ? t(
+                  'Attestation needs the host quote-generation stack for your TEE. Without it the guest sends an empty quote and Trustee rejects it — pods still run, but no secret is ever released. Confirm it is deployed for your hardware:',
                 )
               : t(
-                  'The Intel TDX attestation infrastructure is deploying in intel-dcap. It is ready once PCCS is available and the QGS DaemonSet is running on your TDX nodes.',
-                )
-            : t(
-                'Attestation needs the host quote-generation stack for your TEE. Without it the guest sends an empty quote and Trustee rejects it — pods still run, but no secret is ever released. Confirm it is deployed for your hardware:',
+                  'Attestation needs the host quote-generation stack for your TEE, provided by the Intel TDX DCAP operator — install it from OperatorHub (the guided setup links there) and create its TdxQuoteGenerationService:',
+                )}
+          {legacy.status === 'present' && (
+            <div className="coco-openshift-console-plugin__mt">
+              <strong>
+                {t(
+                  'Obsolete OpenShift sandboxed containers 1.12 attestation infrastructure detected.',
+                )}
+              </strong>{' '}
+              {t(
+                'The manually deployed PCCS/QGS stack does not work on later versions and conflicts with the Intel TDX DCAP operator. Follow the documented migration (remove it, toggle Intel SGX Factory Reset in the BIOS) before setting up the operator flow.',
+              )}{' '}
+              <a href={INTEL_DCAP_DOCS_URL} target="_blank" rel="noopener noreferrer">
+                {t('Documentation')}
+              </a>
+            </div>
+          )}
+          {legacy.loaded && legacy.status === 'unknown' && (
+            <div className="coco-openshift-console-plugin__mt">
+              {t(
+                'Could not check for the obsolete OpenShift sandboxed containers 1.12 attestation infrastructure (no read access to the intel-dcap namespace). The guided setup stays blocked until it is ruled out — verify manually before deploying.',
               )}
+            </div>
+          )}
           <ul className="coco-openshift-console-plugin__mt">
             {teeKinds.tdx && (
               <li>
                 {t(
-                  'Intel TDX — deploy a Quote Generation Service (QGS) and a PCCS for PCK collateral (Intel DCAP). The guest reaches the QGS over vsock. Use the guided setup on the right.',
+                  'Intel TDX — install the Intel TDX DCAP Operator and create its TdxQuoteGenerationService (the operator runs the per-node QGS; there is no in-cluster PCCS). The guest reaches the QGS over vsock. Use the guided setup on the right.',
                 )}
               </li>
             )}
@@ -301,7 +359,7 @@ const CocoSetup: FC = () => {
             {!teeKinds.tdx && !teeKinds.snp && !teeKinds.gpu && (
               <li>
                 {t(
-                  'Match the quote-generation stack to your TEE — Intel TDX: QGS + PCCS; AMD SEV-SNP: AMD KDS; NVIDIA GPU: NRAS.',
+                  'Match the quote-generation stack to your TEE — Intel TDX: the Intel TDX DCAP operator; AMD SEV-SNP: AMD KDS; NVIDIA GPU: NRAS.',
                 )}
               </li>
             )}
