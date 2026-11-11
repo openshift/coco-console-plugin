@@ -138,20 +138,43 @@ export type DaemonSetKind = K8sResourceCommon & {
   };
 };
 
-/** A batch/v1 Job — we watch .status to drive automation progress. */
-export type JobKind = K8sResourceCommon & {
+/**
+ * trustedservices.intel.com/v1 TdxQuoteGenerationService — the cluster-scoped
+ * singleton reconciled by the Intel TDX DCAP Operator (which replaces the OSC
+ * 1.12 manual PCCS/QGS procedure). Shape mirrors the operator's CRD
+ * (intel/confidential-computing.tee.dcap.k8s.qgs): the CEL rules enforce
+ * metadata.name == 'intel-tdx-dcap' and exactly one platformRegistration mode;
+ * status carries the Ready condition plus the managed DaemonSet/registrar counts.
+ */
+export type TdxQuoteGenerationServiceKind = K8sResourceCommon & {
   spec?: {
-    backoffLimit?: number;
-    template?: {
-      metadata?: Record<string, unknown>;
-      spec?: Record<string, unknown>;
+    /** Node selector entries in "key=value" format (max 16, unique keys). */
+    nodeSelector?: string[];
+    platformRegistration?: {
+      /** Online registration — registrar Deployment reads the PCS API key Secret. */
+      Online?: { apiKeySecretName?: string };
+      /** Offline registration (the CRD default) — registration initContainer only. */
+      Offline?: Record<string, never>;
+      /** External registration — PCK secrets managed outside the operator. */
+      External?: Record<string, never>;
     };
   };
   status?: {
-    active?: number;
-    succeeded?: number;
-    failed?: number;
-    conditions?: { type: string; status: string; reason?: string; message?: string }[];
+    conditions?: {
+      type: string;
+      status: string;
+      reason?: string;
+      message?: string;
+      lastTransitionTime?: string;
+      observedGeneration?: number;
+    }[];
+    daemonsetName?: string;
+    desiredNumberScheduled?: number;
+    currentNumberScheduled?: number;
+    numberReady?: number;
+    registrationDeploymentName?: string;
+    registrationDeploymentReady?: boolean;
+    observedGeneration?: number;
   };
 };
 

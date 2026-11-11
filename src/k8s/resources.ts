@@ -149,7 +149,6 @@ export const DaemonSetGVK: K8sGroupVersionKind = {
   version: 'v1',
   kind: 'DaemonSet',
 };
-export const JobGVK: K8sGroupVersionKind = { group: 'batch', version: 'v1', kind: 'Job' };
 export const ServiceGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Service' };
 export const ConfigMapGVK: K8sGroupVersionKind = { version: 'v1', kind: 'ConfigMap' };
 export const SecretGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Secret' };
@@ -234,18 +233,6 @@ export const SecretModel: K8sModel = {
   labelPlural: 'Secrets',
 };
 
-/** batch/v1 Job — used to run in-cluster setup scripts (e.g. TDX attestation infra). */
-export const JobModel: K8sModel = {
-  apiGroup: 'batch',
-  apiVersion: 'v1',
-  kind: 'Job',
-  plural: 'jobs',
-  namespaced: true,
-  abbr: 'J',
-  label: 'Job',
-  labelPlural: 'Jobs',
-};
-
 // ---- RBAC for the attestation evidence sidecar ----
 // The evidence sidecar runs as its own ServiceAccount and needs a small Role
 // (write the evidence ConfigMap, read its own Pod) bound to that SA.
@@ -279,18 +266,6 @@ export const RoleBindingModel: K8sModel = {
   abbr: 'RB',
   label: 'RoleBinding',
   labelPlural: 'RoleBindings',
-};
-
-/** Cluster-scoped binding — the TDX attestation setup Job runs as cluster-admin. */
-export const ClusterRoleBindingModel: K8sModel = {
-  apiGroup: 'rbac.authorization.k8s.io',
-  apiVersion: 'v1',
-  kind: 'ClusterRoleBinding',
-  plural: 'clusterrolebindings',
-  namespaced: false,
-  abbr: 'CRB',
-  label: 'ClusterRoleBinding',
-  labelPlural: 'ClusterRoleBindings',
 };
 
 // ---- Well-known names / locations ----
@@ -367,35 +342,69 @@ export const COCO_TOOLS_IMAGE = 'quay.io/openshift_sandboxed_containers/coco-too
  */
 export const EVIDENCE_SIDECAR_IMAGE = 'registry.access.redhat.com/ubi9/ubi-minimal:latest';
 
+// ---- Intel TDX remote attestation (Intel TDX DCAP Operator) ----
+// Mirrors "Deploying confidential containers on bare-metal servers" §4.2,
+// "Deploy Intel TDX remote attestation" (OSC 1.13+): the Intel TDX DCAP Operator
+// replaces the OSC 1.12 manual PCCS/QGS procedure. The operator reconciles a
+// single cluster-scoped TdxQuoteGenerationService CR and owns the QGS DaemonSet
+// and the platform-registration Deployment — there is no in-cluster PCCS anymore.
+// CRD shape verified against intel/confidential-computing.tee.dcap.k8s.qgs.
 /**
- * Full UBI9 (not ubi-minimal) — ships openssl, curl, base64, sha512sum, sed and
- * bash. Used as the runner for the TDX attestation setup Job (which needs openssl
- * to mint the throwaway PCCS TLS cert). Public, no pull secret required.
+ * Namespace the Intel TDX DCAP Operator is installed in (per the OSC docs; the
+ * operator manages its DaemonSet/Deployment and reads the PCS API key Secret here).
  */
-export const UBI9_IMAGE = 'registry.access.redhat.com/ubi9/ubi:latest';
-
+export const INTEL_DCAP_OPERATOR_NAMESPACE = 'intel-dcap-operator-system';
+/** The operator's display name in the web console catalog / OperatorHub. */
+export const INTEL_DCAP_OPERATOR_NAME = 'Intel TDX DCAP Operator';
+/** CRD providing trustedservices.intel.com/v1 TdxQuoteGenerationService. */
+export const TQGS_CRD_NAME = 'tdxquotegenerationservices.trustedservices.intel.com';
 /**
- * In-cluster OpenShift CLI image — always present, version-matched to the cluster,
- * pullable from any namespace with no pull secret. An initContainer copies its `oc`
- * binary into a shared volume so the UBI9 runner can drive `oc`/`oc adm`.
+ * The only allowed TdxQuoteGenerationService name — the CRD enforces the
+ * singleton with a CEL rule (metadata.name must be 'intel-tdx-dcap').
  */
-export const OC_CLI_IMAGE = 'image-registry.openshift-image-registry.svc:5000/openshift/cli:latest';
-
-// ---- Intel TDX remote attestation (Intel DCAP: PCCS + QGS) ----
-// Mirrors "Deploying confidential containers on bare-metal servers" §3.2,
-// "Deploying Intel TDX remote attestation".
-/** Namespace that holds the Intel DCAP remote-attestation infrastructure. */
-export const INTEL_DCAP_NAMESPACE = 'intel-dcap';
+export const TQGS_CR_NAME = 'intel-tdx-dcap';
+/** Default Secret the operator's registrar reads the Intel PCS API key from. */
+export const TQGS_PCS_API_KEY_SECRET_NAME = 'intel-pcs-api-key';
+/** Data key holding the API key inside the PCS API key Secret. */
+export const TQGS_PCS_API_KEY_SECRET_KEY = 'api-key';
 /**
- * sandboxed-containers-operator release tag whose install-helpers carry the pinned
- * PCCS/QGS manifests. Matches OSC 1.12 (the version the bare-metal CoCo doc targets).
+ * Namespace that held the OSC 1.12 (obsolete, manually deployed) PCCS/QGS stack.
+ * Watched only to detect the legacy infrastructure and warn about it — those
+ * deployments do not work on OSC 1.13+ and must be removed (plus an SGX Factory
+ * Reset in the BIOS) before the Intel TDX DCAP Operator is installed.
  */
-export const OSC_DCAP_HELPERS_TAG = 'v1.12.0';
-/** Raw base URL for the pinned intel-dcap install helpers (pccs.yaml.in, qgs.yaml). */
-export const oscDcapHelpersBase = (tag: string = OSC_DCAP_HELPERS_TAG): string =>
-  `https://raw.githubusercontent.com/openshift/sandboxed-containers-operator/refs/tags/${tag}/scripts/install-helpers/baremetal-coco/intel-dcap`;
+export const LEGACY_INTEL_DCAP_NAMESPACE = 'intel-dcap';
+/** Legacy OSC 1.12 PCCS Deployment (in the legacy intel-dcap namespace). */
+export const LEGACY_PCCS_DEPLOYMENT_NAME = 'pccs';
+/** Legacy OSC 1.12 QGS DaemonSet (in the legacy intel-dcap namespace). */
+export const LEGACY_QGS_DAEMONSET_NAME = 'tdx-qgs';
 /** Intel Trusted Services API portal — where the operator subscribes for the PCS API key. */
 export const INTEL_PCS_PORTAL_URL = 'https://api.portal.trustedservices.intel.com';
+/** OSC bare-metal CoCo docs — §4.2 covers the Intel TDX DCAP operator and the 1.12 migration note. */
+export const INTEL_DCAP_DOCS_URL =
+  'https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.13/html/deploying_confidential_containers_on_bare-metal_servers/configure-cc-overview_metal-cc';
+/** OperatorHub keyword search for the Intel TDX DCAP Operator. */
+export const INTEL_DCAP_OPERATORHUB_SEARCH = '/operatorhub/all-namespaces?keyword=Intel+TDX+DCAP';
+
+/** trustedservices.intel.com/v1 TdxQuoteGenerationService (cluster-scoped singleton). */
+export const TdxQuoteGenerationServiceGVK: K8sGroupVersionKind = {
+  group: 'trustedservices.intel.com',
+  version: 'v1',
+  kind: 'TdxQuoteGenerationService',
+};
+
+/** Create-capable model for the cluster-scoped TdxQuoteGenerationService singleton. */
+export const TdxQuoteGenerationServiceModel: K8sModel = {
+  apiGroup: 'trustedservices.intel.com',
+  apiVersion: 'v1',
+  kind: 'TdxQuoteGenerationService',
+  plural: 'tdxquotegenerationservices',
+  namespaced: false,
+  abbr: 'TQGS',
+  label: 'TdxQuoteGenerationService',
+  labelPlural: 'TdxQuoteGenerationServices',
+  crd: true,
+};
 
 // ---- Intel SGX device plugin (prereq for TDX quote generation) ----
 // TDX quotes are signed by an SGX quoting enclave, so the QGS requests
