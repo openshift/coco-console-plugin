@@ -1,5 +1,5 @@
 # UBI 9 minimal build image — node/npm plus awk/bash/tar is all the yarn build needs.
-FROM registry.access.redhat.com/ubi9/nodejs-22-minimal:latest AS build-main
+FROM registry.access.redhat.com/ubi9/nodejs-22-minimal:9.9-1794500978 AS build-main
 USER root
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 WORKDIR /usr/src/app
@@ -14,7 +14,7 @@ RUN LOCAL_YARN="node $(awk '/yarnPath:/{print $2}' .yarnrc.yml)" && \
     $LOCAL_YARN build
 
 # RHEL 9 nginx with OpenSSL 3.5 (ML-KEM), so the chart's PQC ssl_ecdh_curve defaults work.
-FROM registry.access.redhat.com/ubi9/nginx-126:latest
+FROM registry.access.redhat.com/ubi9/nginx-126:9.9-1794514156
 # The operator (and this repo's Helm chart) render nginx.conf with
 # `root /usr/share/nginx/html`, a directory owned by the nginx RPM. Serve the
 # build from there by adding files only: deleting or replacing RPM-installed
@@ -33,4 +33,17 @@ RUN chmod +x /entrypoint.sh && \
     chgrp -R 0 /tmp/nginx /builds && \
     chmod -R g=u /tmp/nginx /builds
 USER 1001
+
+# Red Hat labels
+LABEL name="openshift-sandboxed-containers/coco-console-plugin-rhel9" \
+cpe="cpe:/a:redhat:confidential_compute_attestation:1.130::el9" \
+version="$VERSION" \
+com.redhat.component="coco-console-plugin" \
+summary="Console plugin for Confidential Containers" \
+maintainer="support@redhat.com" \
+description="Console plugin for Confidential Containers" \
+io.k8s.display-name="openshift-sandboxed-containers-coco-console-plugin" \
+io.k8s.description="Console plugin for Confidential Containers" \
+io.openshift.tags=""
+
 ENTRYPOINT ["/entrypoint.sh"]
